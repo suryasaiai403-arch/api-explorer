@@ -1,6 +1,9 @@
 import React,{useEffect,useMemo,useState} from 'react';
-import {createRoot} from 'react-dom/client';
-import {Search, RefreshCw, SlidersHorizontal, AlertCircle, Database} from 'lucide-react';
+import { createRoot } from 'react-dom/client';
+import Header from './components/Header';
+import Toolbar from './components/Toolbar';
+import PostCard from './components/PostCard';
+import { LoadingGrid, ErrorState, EmptyState } from './components/States';
 import './styles.css';
 
 const API='https://jsonplaceholder.typicode.com/posts';
@@ -14,42 +17,42 @@ function App(){
 
   const load=async()=>{
     setLoading(true); setError('');
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),8000);
     try{
-      const r=await fetch(API);
-      if(!r.ok) throw new Error('Unable to fetch data.');
-      setPosts(await r.json());
-    }catch(e){setError(e.message||'Something went wrong.');}
-    finally{setLoading(false);}
+      const response=await fetch(API,{signal:controller.signal});
+      if(!response.ok) throw new Error(`Request failed with status ${response.status}.`);
+      const data=await response.json();
+      if(!Array.isArray(data)) throw new Error('The API returned an unexpected response.');
+      setPosts(data);
+    }catch(err){
+      setError(err.name==='AbortError'?'The request timed out. Please try again.':(err.message||'Something went wrong.'));
+    }finally{
+      clearTimeout(timeout);
+      setLoading(false);
+    }
   };
-  useEffect(()=>{load()},[]);
 
-  const filtered=useMemo(()=>posts.filter(p=>{
-    const matchesUser=user==='all'||String(p.userId)===user;
-    const text=(p.title+' '+p.body).toLowerCase();
-    return matchesUser && text.includes(query.toLowerCase());
+  useEffect(()=>{load();},[]);
+
+  const filtered=useMemo(()=>posts.filter(post=>{
+    const matchesUser=user==='all'||String(post.userId)===user;
+    const text=(post.title+' '+post.body).toLowerCase();
+    return matchesUser && text.includes(query.toLowerCase().trim());
   }),[posts,query,user]);
 
   return <div className="app">
-    <header className="hero">
-      <div className="nav"><div className="brand"><span className="logo"><Database size={20}/></span> API Explorer</div><span className="status"><i/> Live API</span></div>
-      <div className="hero-copy"><p className="eyebrow">PUBLIC REST API • REACT FRONTEND</p><h1>Explore live data,<br/><span>beautifully.</span></h1><p>Search and filter a real API with responsive UI, loading feedback, and resilient error handling.</p></div>
-    </header>
-
+    <Header/>
     <main className="container">
-      <section className="toolbar">
-        <div className="search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search posts..." /></div>
-        <div className="filter"><SlidersHorizontal size={18}/><select value={user} onChange={e=>setUser(e.target.value)}><option value="all">All users</option>{Array.from({length:10},(_,i)=><option key={i+1} value={i+1}>User {i+1}</option>)}</select></div>
-        <button className="refresh" onClick={load} disabled={loading}><RefreshCw size={17} className={loading?'spin':''}/> Refresh</button>
-      </section>
-
+      <Toolbar query={query} setQuery={setQuery} user={user} setUser={setUser} onRefresh={load} loading={loading}/>
       <div className="meta"><span>{loading?'Loading data...':`${filtered.length} results`}</span><span>Source: JSONPlaceholder</span></div>
-
-      {loading && <div className="grid">{Array.from({length:8},(_,i)=><div className="card skeleton" key={i}><div/><div/><div/></div>)}</div>}
-      {!loading && error && <div className="state error"><AlertCircle size={38}/><h2>Couldn’t load the data</h2><p>{error}</p><button onClick={load}><RefreshCw size={16}/> Try again</button></div>}
-      {!loading && !error && filtered.length===0 && <div className="state"><Search size={38}/><h2>No results found</h2><p>Try a different search term or filter.</p></div>}
-      {!loading && !error && filtered.length>0 && <div className="grid">{filtered.map(p=><article className="card" key={p.id}><div className="card-top"><span className="badge">POST #{String(p.id).padStart(2,'0')}</span><span className="user">User {p.userId}</span></div><h2>{p.title}</h2><p>{p.body}</p><div className="card-foot">Public API data <span>→</span></div></article>)}</div>}
+      {loading && <LoadingGrid/>}
+      {!loading && error && <ErrorState message={error} onRetry={load}/>}
+      {!loading && !error && filtered.length===0 && <EmptyState/>}
+      {!loading && !error && filtered.length>0 && <div className="grid">{filtered.map(post=><PostCard key={post.id} post={post}/>)}</div>}
     </main>
-    <footer>Built with React • Fetch API • Responsive components</footer>
-  </div>
+    <footer>Built with React • Fetch API • Reusable components • Responsive UI</footer>
+  </div>;
 }
+
 createRoot(document.getElementById('root')).render(<App/>);
